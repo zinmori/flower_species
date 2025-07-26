@@ -55,23 +55,34 @@ def predict():
 
     try:
         # Ouvrir l'image
-        img = Image.open(file.stream)
+        img = Image.open(file.stream).convert('RGB')  # Assurer RGB
         
-        # Appliquer les transformations sur l'image
-        img_tensor = transform(img)
-        img_tensor = img_tensor.unsqueeze(0)  # Ajouter la dimension du batch
-        # Effectuer la prédiction
-        with torch.no_grad():  # Désactiver le calcul des gradients
-            outputs = model(img_tensor)
-            _, predicted_idx = torch.max(outputs, 1)
+        # Prétraitement
+        img_tensor = transform(img).unsqueeze(0)
+
+        with torch.no_grad():
+            outputs = model(img_tensor)  # log-probabilités car LogSoftmax
+            probs = torch.exp(outputs)  # Convertir en probabilités
+
+            probs = probs.squeeze()  # Enlever la dimension batch
             idx_to_class = {v: k for k, v in model.class_to_idx.items()}
-            predicted_class = cat_to_name[idx_to_class[predicted_idx.item()]]
-        # Retourner la classe prédite
-        return jsonify({'prediction': predicted_class})
+
+            # Mapper indices -> noms -> probabilités
+            predictions = {}
+            for idx, prob in enumerate(probs):
+                class_id = idx_to_class[idx]
+                class_name = cat_to_name.get(class_id, class_id)
+                predictions[class_name] = round(prob.item(), 4)
+
+            # Trier par probabilité décroissante
+            sorted_predictions = dict(sorted(predictions.items(), key=lambda item: item[1], reverse=True))
+
+        return jsonify({'predictions': sorted_predictions})
 
     except Exception as e:
         print(e)
         return jsonify({'error': str(e)}), 500
+
 
 # Exécuter l'application Flask
 if __name__ == '__main__':
